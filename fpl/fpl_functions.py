@@ -8,6 +8,7 @@ import pandas as pd
 
 class FPLDraftWeek():
     def __init__(self, league, game_week):
+        self.game_week = game_week
         self.fixtures_url = f"https://fantasy.premierleague.com/api/fixtures/?event={game_week}"
         self.team_url = f"https://draft.premierleague.com/api/entry/{{entry_id}}/event/{game_week}"
         self.live_players_url = f"https://draft.premierleague.com/api/event/{game_week}/live"
@@ -37,14 +38,19 @@ class FPLDraftWeek():
         scores = scores.reset_index()
         scores["rank"] = scores["index"] + 1
 
+        # Add URL to the team
+        scores["entry_name_with_link"] = scores.apply(lambda x: self._add_link_to_name(x.entry_id, x.entry_name), axis=1)
+
         return scores
 
     def get_live_score_pdf_formatted(self):
         scores = self.get_live_score_pdf()
         scores["full_name"] = scores["player_first_name"] + " " + scores["player_last_name"]
+
         cols = [
             "rank",
             "entry_name",
+            "entry_name_with_link",
             "full_name",
             "live_scores",
             "live_total"
@@ -52,13 +58,19 @@ class FPLDraftWeek():
         rename = [
             "Rank",
             "Team Name",
+            "Team Link",
             "Player Name",
             "GW Score",
-            "Total Score"]
+            "Total Score"
+        ]
 
         scores = scores[cols]
         scores.columns = rename
         return scores.sort_values(["Total Score"], ascending=False)
+
+    def _add_link_to_name(self, entry_id, team_name):
+        return 'https://draft.premierleague.com/entry/{entry_id}/event/{game_week}'\
+            .format(entry_id=entry_id, game_week=self.game_week) 
 
     def get_team_score(self, entry_id):
         team_url = self.team_url.format(entry_id=entry_id)
@@ -138,7 +150,7 @@ class FPLDraftWeek():
         return pd.DataFrame(self.self.requests_json_return(self.league_details_url)["standings"])
 
 
-#print(get_live_scores_call(41747, 19))
 
-# x = FPLDraftWeek(41747,20)
+# x = FPLDraftWeek(41747,34)
 # print(x.get_live_score_pdf())
+# print(x.get_live_score_pdf_formatted())

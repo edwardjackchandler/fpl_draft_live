@@ -20,5 +20,5 @@ def live_totals(league, game_week):
     )
 
 if __name__ == "__main__":
+    # app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.run()
-
