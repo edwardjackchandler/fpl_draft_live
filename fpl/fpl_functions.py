@@ -1,6 +1,8 @@
 from datetime import date, datetime
 import requests
 import pandas as pd
+import logging
+
 
 # serverless deploy -v
 # serverless invoke -f fpl_live_score -l
@@ -143,13 +145,13 @@ class FPLDraftWeek():
             return live_scores_with_subs["total_points"].sum()
 
     def requests_json_return(self, url):
+        logging.warning(f'Pulling data from {url} Draft FPL API')
         r = requests.get(url)
+        logging.warning('Data Loaded into Memory')
         return r.json()
 
     def get_total_scores(self):
         return pd.DataFrame(self.self.requests_json_return(self.league_details_url)["standings"])
-
-
 
 # x = FPLDraftWeek(41747,34)
 # print(x.get_live_score_pdf())

@@ -46,6 +46,11 @@ custom:
     packRequirements: false
   pythonRequirements:
     dockerizePip: non-linux
+  customDomain:
+    domainName: lastdraft.co.uk
+    basePath: ''
+    stage: ${self:provider.stage}
+    createRoute53Record: true
 
 package:
   exclude:
@@ -57,3 +62,4 @@ package:
 plugins:
   - serverless-python-requirements
   - serverless-wsgi
+  - serverless-domain-manager
