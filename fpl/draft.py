@@ -2,7 +2,7 @@ from datetime import date, datetime
 import requests
 import pandas as pd
 import logging
-
+from functools import reduce
 
 # serverless deploy -v
 # serverless invoke -f fpl_live_score -l
@@ -24,18 +24,33 @@ class ApiScraper():
     
     def get_live_scores(self):
         teams_dict = { 
-            manager_dict["entry_id"]: (manager_dict["entry_name"], int(self.get_team_score(manager_dict["entry_id"])))
-            for manager_dict in requests_json_return(self.league_details_url)["league_entries"]
+            manager_dict["entry_id"]: (manager_dict["entry_name"], int(self.get_ordered_team_score(manager_dict["entry_id"])))
+            for manager_dict in self.get_league_entries()
         }
 
-        return teams_dict        
+        return teams_dict
+        
+    def get_league_pick_details(self):
+        managers_pdf = self.get_league_entries_pdf()
+        entry_ids = managers_pdf['entry_id'].tolist()
+        manager_pick_details = []
+
+        for entry_id in entry_ids:
+            manager_pick_details.append(self.get_pick_details(entry_id))
+
+        manager_pick_details_pdf = pd.concat(manager_pick_details)
+
+        return manager_pick_details_pdf.merge(
+            managers_pdf,
+            on='entry_id'
+        )
 
     def get_live_score_pdf(self):  
         teams = pd.DataFrame(requests_json_return(self.league_details_url)["standings"])
         live_scores = pd.DataFrame(requests_json_return(self.league_details_url)["league_entries"])
         scores = teams.merge(live_scores, left_on="league_entry", right_on="id")
 
-        scores["live_scores"] = scores["entry_id"].apply(self.get_team_score)
+        scores["live_scores"] = scores["entry_id"].apply(self.get_ordered_team_score)
         scores["live_total"] = scores["live_scores"] - scores["event_total"] + scores["total"]
         scores = scores.reset_index()
         scores["rank"] = scores["index"] + 1
@@ -72,25 +87,39 @@ class ApiScraper():
 
     def _add_link_to_name(self, entry_id, team_name):
         return 'https://draft.premierleague.com/entry/{entry_id}/event/{game_week}'\
-            .format(entry_id=entry_id, game_week=self.game_week) 
+            .format(entry_id=entry_id, game_week=self.game_week)
 
-    def get_team_score(self, entry_id):
+    def get_league_entries(self):
+        return requests_json_return(self.league_details_url)["league_entries"]
+
+    def get_league_entries_pdf(self):
+        return pd.DataFrame(self.get_league_entries())
+
+    def get_picks(self, entry_id):
         team_url = self.team_url.format(entry_id=entry_id)
         json = requests_json_return(team_url)
 
-        entry_players_pdf = pd.DataFrame(json["picks"])
-        player_stats_pdf = self.get_player_stats(self.live_players_url)
+        return pd.DataFrame(json["picks"])
 
-        live_player_scores = entry_players_pdf.merge(
+    def get_pick_details(self, entry_id):
+        picks_pdf = self.get_picks(entry_id)
+        player_stats_pdf = self.get_player_stats()
+
+        pick_details = picks_pdf.merge(
             player_stats_pdf, 
             left_on="element", 
             right_on="index"
         )
 
-        return self.get_live_score(live_player_scores, self.fixtures_url)
+        pick_details['entry_id'] = entry_id
 
-    def get_player_stats(self, live_players_url):
-        json = requests_json_return(live_players_url)
+        return pick_details
+
+    def get_ordered_team_score(self, entry_id):
+        return self.get_live_score(self.get_pick_details(entry_id), self.fixtures_url)
+
+    def get_player_stats(self):
+        json = requests_json_return(self.live_players_url)
         live_players_pdf = pd.DataFrame({ k:v["stats"] for k, v in json["elements"].items() }).transpose().reset_index().apply(pd.to_numeric)
         return live_players_pdf
 
@@ -144,12 +173,6 @@ class ApiScraper():
             
             return live_scores_with_subs["total_points"].sum()
 
-    def requests_json_return(self, url):
-        logging.warning(f'Pulling data from {url} Draft FPL API')
-        r = requests.get(url)
-        logging.warning('Data Loaded into Memory')
-        return r.json()
-
     def get_total_scores(self):
         return pd.DataFrame(self.requests_json_return(self.league_details_url)["standings"])
 
@@ -158,3 +181,8 @@ def requests_json_return(url):
     r = requests.get(url)
     logging.warning('Data Loaded into Memory')
     return r.json()
+
+# 1. Create a function that loads the GW document from the API
+# 2. Create a function that cleans the GW document and puts it into a tabular format
+# 3. Create a function that load the GW into parquet
+# 4. Create a function that sends the parquet file to S3
