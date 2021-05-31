@@ -10,7 +10,14 @@ game_week_api = draft.ApiScraper(41747, 38)
 
 # Player Stats
 # print(game_week_api.get_player_stats())
-print(game_week_api.get_player_stats().columns)
+print(game_week_api.get_named_player_stats().head(5))
+
+df = 
+bucket = 
+folders
+file_name
+game_week_api.df_parquet_write_s3()
+'s3://bucket/folder/bucket.parquet.gzip'
 
 # Pick Details
 #print(game_week_api.get_league_pick_details())
