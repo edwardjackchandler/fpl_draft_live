@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from pandas.core.reshape.concat import concat
 import requests
 import pandas as pd
 import logging
@@ -15,6 +16,7 @@ class ApiScraper():
         self.team_url = f"https://draft.premierleague.com/api/entry/{{entry_id}}/event/{game_week}"
         self.live_players_url = f"https://draft.premierleague.com/api/event/{game_week}/live"
         self.league_details_url = f"https://draft.premierleague.com/api/league/{league}/details"
+        self.player_details_url = "https://draft.premierleague.com/api/bootstrap-static"
 
     def get_live_scores_call(self):
         return { k: v for k, v in sorted(self.get_live_scores_json().items(), key=lambda item: item[1], reverse=True) }
@@ -103,7 +105,7 @@ class ApiScraper():
 
     def get_pick_details(self, entry_id):
         picks_pdf = self.get_picks(entry_id)
-        player_stats_pdf = self.get_player_stats()
+        player_stats_pdf = self.get_live_player_stats()
 
         pick_details = picks_pdf.merge(
             player_stats_pdf, 
@@ -118,10 +120,53 @@ class ApiScraper():
     def get_ordered_team_score(self, entry_id):
         return self.get_live_score(self.get_pick_details(entry_id), self.fixtures_url)
 
-    def get_player_stats(self):
+    def get_live_player_stats(self):
         json = requests_json_return(self.live_players_url)
-        live_players_pdf = pd.DataFrame({ k:v["stats"] for k, v in json["elements"].items() }).transpose().reset_index().apply(pd.to_numeric)
-        return live_players_pdf
+
+        live_players_pdf = pd.DataFrame({ 
+            k:v["stats"] for k, v in json["elements"].items() 
+        }).transpose().reset_index().apply(pd.to_numeric)
+        live_players_pdf['id'] = live_players_pdf['index']
+        return live_players_pdf.drop('index', axis=1)
+
+    def get_player_stats(self):
+        player_stats = pd.DataFrame(
+            requests_json_return(self.player_details_url)["elements"]
+        )
+        element_types = pd.DataFrame(
+            requests_json_return(self.player_details_url)["element_types"]
+        )
+
+        # these columns come up in the player_stats and live_player dataframes
+        # so we need to add a total_ prefix to be able to differentiate
+        total_columns = [
+            'minutes', 'goals_scored', 'assists', 'clean_sheets',
+            'goals_conceded', 'own_goals', 'penalties_saved',
+            'penalties_missed', 'yellow_cards', 'red_cards', 'saves',
+            'bonus', 'bps', 'influence', 'creativity', 'threat',
+            'ict_index', 'total_points', 'in_dreamteam'
+        ]
+
+        for col in total_columns:
+            player_stats = player_stats.rename(columns={col: 'total_' + col})
+
+        return player_stats.merge(
+            element_types,
+            on='id',
+            how='left'
+        )
+
+    def get_football_teams(self):
+        return pd.DataFrame(
+            requests_json_return(self.player_details_url)["teams"]
+        )
+
+    def get_named_player_stats(self):
+        return self.get_live_player_stats().merge(
+            self.get_player_stats(),
+            on='id',
+            how='left'
+        )
 
     def get_gw_fixture_times(self, url):
         json = requests_json_return(url)
@@ -174,7 +219,14 @@ class ApiScraper():
             return live_scores_with_subs["total_points"].sum()
 
     def get_total_scores(self):
-        return pd.DataFrame(self.requests_json_return(self.league_details_url)["standings"])
+        return pd.DataFrame(requests_json_return(self.league_details_url)["standings"])
+
+    def df_parquet_write_s3(self, bucket, folders, file_name, df, partition_cols=None):
+        full_path = 's3://' + bucket + folders + str(self.game_week) + '/' + file_name
+        df.to_parquet(full_path, compression=None, partition_cols=partition_cols)
+        print(df.head(5))
+        logging.warning("Loading dataframe into {full_path}".format(full_path=full_path))
+
 
 def requests_json_return(url):
     logging.warning(f'Pulling data from {url} Draft FPL API')
@@ -182,7 +234,13 @@ def requests_json_return(url):
     logging.warning('Data Loaded into Memory')
     return r.json()
 
-# 1. Create a function that loads the GW document from the API
-# 2. Create a function that cleans the GW document and puts it into a tabular format
+
+class S3Writer():
+    def df_parquet_write_s3(self, bucket, folders, file_name, game_week, df):
+        full_path = 's3://' + bucket + folders + game_week + '/' + file_name + 'parquet.gzip'
+        df.to_parquet(full_path, compression='gzip', partition_cols=['game_week'])
+
+# 1. Create a function that loads the GW document from the API (/)
+# 2. Create a function that cleans the GW document and puts it into a tabular format (/)
 # 3. Create a function that load the GW into parquet
 # 4. Create a function that sends the parquet file to S3
