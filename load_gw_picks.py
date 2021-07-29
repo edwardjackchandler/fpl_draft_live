@@ -6,25 +6,40 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 
 game_weeks = [ i for i in range(1, 39) ]
-game_week_api = draft.ApiScraper(41747, 38)
 
-# Player Stats
-# print(game_week_api.get_player_stats())
-print(game_week_api.get_named_player_stats().head(5))
+y = False
+if y == True:
+    game_week = 1
+    game_week_details = draft.ApiScraper(41747, game_week)
+    df = game_week_details.get_league_pick_details()
 
-df = 
-bucket = 
-folders
-file_name
-game_week_api.df_parquet_write_s3()
-'s3://bucket/folder/bucket.parquet.gzip'
+    print(df.columns)
+    bucket = 'last-draft/'
+    folders = 'draft_data/'
+    file_name = 'named_player_stats.parquet'
+#game_week_api.df_parquet_write_s3(bucket, folders, file_name, df)
+
+# x = pd.read_parquet('s3://last-draft/draft_data/38/named_player_stats.parquet')
+# print(x.head(5))
+# 's3://bucket/folder/bucket.parquet.gzip'
 
 # Pick Details
-#print(game_week_api.get_league_pick_details())
+# print(game_week_api.get_league_pick_details())
 # league_pick_details = game_week_api.get_league_pick_details()
 # print(league_pick_details.shape)
 # print(league_pick_details)
 
-# for game_week in game_weeks:
-#     game_week_details = draft.ApiScraper(41747, game_week)
-#     print(game_week_details.get_team_score())
+df_list = []
+x = True
+if x == True:
+
+    for game_week in game_weeks:
+        print("game_week", game_week)
+        game_week_details = draft.ApiScraper(41747, game_week)
+        df = game_week_details.get_league_pick_details()
+        df['game_week'] = game_week
+        df_list.append(df)
+
+    total_data = pd.concat(df_list)
+    total_data.to_csv("league_pick_details.csv", index=False)
+    #print(total_data.head(5))

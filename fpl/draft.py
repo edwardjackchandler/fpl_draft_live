@@ -17,6 +17,8 @@ class ApiScraper():
         self.live_players_url = f"https://draft.premierleague.com/api/event/{game_week}/live"
         self.league_details_url = f"https://draft.premierleague.com/api/league/{league}/details"
         self.player_details_url = "https://draft.premierleague.com/api/bootstrap-static"
+        self.live_player_stats = self.get_live_player_stats()
+        self.static_player_stats = self.get_static_player_stats()
 
     def get_live_scores_call(self):
         return { k: v for k, v in sorted(self.get_live_scores_json().items(), key=lambda item: item[1], reverse=True) }
@@ -105,12 +107,12 @@ class ApiScraper():
 
     def get_pick_details(self, entry_id):
         picks_pdf = self.get_picks(entry_id)
-        player_stats_pdf = self.get_live_player_stats()
+        player_stats_pdf = self.get_detailed_live_player_stats()
 
         pick_details = picks_pdf.merge(
             player_stats_pdf, 
             left_on="element", 
-            right_on="index"
+            right_on="id"
         )
 
         pick_details['entry_id'] = entry_id
@@ -129,7 +131,7 @@ class ApiScraper():
         live_players_pdf['id'] = live_players_pdf['index']
         return live_players_pdf.drop('index', axis=1)
 
-    def get_player_stats(self):
+    def get_static_player_stats(self):
         player_stats = pd.DataFrame(
             requests_json_return(self.player_details_url)["elements"]
         )
@@ -150,9 +152,12 @@ class ApiScraper():
         for col in total_columns:
             player_stats = player_stats.rename(columns={col: 'total_' + col})
 
+        element_types = element_types.rename(columns={'id': 'element_id'})
+
         return player_stats.merge(
             element_types,
-            on='id',
+            left_on='element_type',
+            right_on='element_id',
             how='left'
         )
 
@@ -161,12 +166,16 @@ class ApiScraper():
             requests_json_return(self.player_details_url)["teams"]
         )
 
-    def get_named_player_stats(self):
-        return self.get_live_player_stats().merge(
-            self.get_player_stats(),
+    def get_detailed_live_player_stats(self):
+        return self.live_player_stats.merge(
+            self.static_player_stats,
             on='id',
             how='left'
         )
+
+# TODO
+    def get_manager_player_stats(self):
+        named_player_stats = self.get_detailed_live_player_stats()
 
     def get_gw_fixture_times(self, url):
         json = requests_json_return(url)
@@ -224,9 +233,7 @@ class ApiScraper():
     def df_parquet_write_s3(self, bucket, folders, file_name, df, partition_cols=None):
         full_path = 's3://' + bucket + folders + str(self.game_week) + '/' + file_name
         df.to_parquet(full_path, compression=None, partition_cols=partition_cols)
-        print(df.head(5))
         logging.warning("Loading dataframe into {full_path}".format(full_path=full_path))
-
 
 def requests_json_return(url):
     logging.warning(f'Pulling data from {url} Draft FPL API')
